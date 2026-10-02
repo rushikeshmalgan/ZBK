@@ -9,3 +9,5 @@ seaborn==0.13.2
 streamlit==1.48.1
 plotly==7.1.0
 joblib==1.5.1
+# optional AI Scout layer; app runs fine without a GEMINI_API_KEY
+google-genai==2.27.0

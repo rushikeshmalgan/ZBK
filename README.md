@@ -27,16 +27,26 @@ On top of these it adds a **similarity finder** ("players like X") and a
 
 - **Performance prediction** — Linear Regression vs Random Forest.
 - **High / Low classification** — Logistic Regression vs Decision Tree.
-- **Player profiling** — K-Means clusters, named from their measured statistics.
-- **PCA visualisation** — interactive 2D "player map", coloured by cluster or by score.
-- **Player similarity** — nearest players in standardised feature space.
+- **Rich feature system** — ~29 metrics grouped into football concepts (shooting, creation, passing,
+  progression, carrying, defending, aerial), with per-90 rates, percentile transforms and position-aware
+  normalisation. Proven against the 5-feature baseline by cross-validation (see Results).
+- **Role-aware profiling** — K-Means on the style space (position not an input) → data-driven roles
+  (e.g. Finisher, Progressor, Ball-playing/Defensive defender), named from measured category indices.
+- **PCA visualisation** — interactive 2D "player map", coloured by role or by score.
+- **Player similarity** — nearest players in the standardised ~29-feature style space, with a
+  same-position mode and an explanation of which stats match / differ.
+- **Fast search** — a Trie (prefix-tree) autocomplete index built once at load (see `search_index.py`).
 - **Scouting** — filter by position, score, pass accuracy, tackles and profile.
 - **Explainability** — feature importance, regression coefficients, a decision tree.
 - **Cross-validation** — 5-fold CV alongside the single test-split results.
+- **Player comparison** — any two players head-to-head (radar overlay, attribute table, similarity).
+- **Scouting shortlist** — save players during a session, then review or AI-analyse them.
+- **AI Scout (optional)** — natural-language search, player reports, comparisons and shortlist
+  analysis via Google Gemini; strictly an interpretation layer over the real data (see below).
 - **Streamlit dashboard** — a custom light, football-editorial UI (not default Streamlit)
   with a top nav, instant player search, an SVG score gauge, an interactive radar and PCA
-  map (Plotly), clickable similar-player cards, a what-if scenario panel, and four sections:
-  Players (scouting report), Analytics, Profiles, Scouting.
+  map (Plotly), clickable similar-player cards, a what-if scenario panel, and six sections:
+  Players (scouting report), Analytics, Profiles, Scouting, Compare, AI Scout.
 
 ## Dataset
 
@@ -54,9 +64,14 @@ On top of these it adds a **similarity finder** ("players like X") and a
 
 ## ML methodology
 
-- **Features (model inputs):** Shots/90, Passes/90, Pass accuracy %, Tackles/90,
-  Interceptions/90. Per-90 rates are `count / minutes * 90`, so players with
-  different playing time are comparable.
+- **Two representations.** A **5-feature baseline** (the original experiment, kept unchanged) and an
+  **expanded ~29-feature** set from six FBref tables, grouped into football concepts. Per-90 rates are
+  `count / minutes * 90`; profiling/similarity use **percentile ranks** (robust to scale/outliers) plus
+  **within-position** percentiles. Separate feature spaces are used for performance, classification,
+  profiling and similarity so the system isn't over-dependent on goals+assists.
+  *Pressing metrics are intentionally absent — FBref no longer publishes player pressures.*
+- **Baseline features (model inputs):** Shots/90, Passes/90, Pass accuracy %, Tackles/90,
+  Interceptions/90.
 - **Target (performance score):** `Goals/90 + Assists/90`. This is a
   project-defined score, **not** an official rating.
 - **No target leakage:** Goals and Assists build the target, so they are
@@ -86,9 +101,22 @@ On top of these it adds a **similarity finder** ("players like X") and a
 | Logistic Regression | 0.796 +/- 0.026 | 0.806 | 0.837 | 0.760 | 0.797 |
 | Decision Tree | 0.777 +/- 0.026 | 0.798 | 0.830 | 0.749 | 0.787 |
 
-**Clustering:** K = 3, silhouette = 0.259. Profiles (named from the data):
-Attacking (high shots, ~69% forwards), Playmaking / ball-playing (most passes and
-best pass accuracy, ~69% defenders), Defensive (most tackles).
+**Baseline vs expanded classification** (5-fold CV on the training set, Logistic Regression):
+
+| Representation | CV accuracy | CV F1 | CV ROC-AUC |
+| --- | --- | --- | --- |
+| Baseline (5 features) | 0.796 | 0.783 | 0.879 |
+| Expanded-A (~25 style features, no xG) | 0.831 | 0.825 | 0.907 |
+| Expanded-B (+ xG / xAG) | 0.840 | 0.832 | 0.920 |
+
+The richer representation gives a genuine, cross-validated lift (not just a lucky test split).
+Expanded-B adds xG/xAG, which are outcome-correlated, so its edge is expected and flagged.
+
+**Role-aware clustering (expanded):** K = 4 data-driven roles on the ~29-feature style space —
+*Finisher, Progressor, Defensive defender, Aerial defender* — named from each cluster's measured
+category indices (position validates them but is not an input). Richer similarity is markedly more
+plausible: e.g. Saka's nearest styles become Barcola / Martinelli / Riquelme (wingers), where the old
+5-feature space returned unrelated names.
 
 ## Limitations
 
@@ -107,8 +135,42 @@ Stated honestly — these are discussion points, not flaws to hide:
 - **In-sample scouting outputs.** Displayed player predictions demonstrate model
   inference on the available player dataset; they are **not** a held-out
   evaluation.
-- **Modest feature set.** Only five stats drive the models, so the performance
-  score is a coarse proxy, not a full rating.
+- **More features ≠ automatically better.** The expanded set helps here (shown by CV), but a richer
+  representation is not guaranteed to classify better; it is limited by data coverage, metric
+  availability, position labels, sample size, league/tactical/team context and role ambiguity.
+- **Roles overlap.** K = 4 is a defensible level of detail; finer roles (e.g. distinct playmaker vs
+  box-to-box midfield) are not cleanly separable in this data, so we don't invent them.
+- **A statistical profile is not complete ability.** It describes measurable on-ball/defensive output,
+  not everything that makes a footballer good.
+
+## AI Scout (optional Gemini layer)
+
+The app has an optional "AI Scout" powered by Google Gemini. **It is an interpretation /
+orchestration layer, not a source of truth.**
+
+- **ML and data are the source of truth.** ML generates the quantitative outputs (scores,
+  predictions, clusters, similarity); Gemini only turns those into natural-language scouting
+  assistance. It is instructed never to invent players or statistics.
+- **Function calling.** For natural-language search, Gemini calls the app's own functions in
+  [scouting.py](scouting.py) (`search_players`, `get_player`, `find_similar_players`,
+  `scout_players`, `compare_players`), which read `models/players_scored.csv`. Gemini explains
+  only what those functions return. Reports and comparisons are handed the real records directly.
+- **Architecture:** `data → ML models → scouting.py functions → Gemini → user`.
+
+**Setup** (the app works fully without this — AI features simply stay disabled):
+
+1. Get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+2. Provide it as `GEMINI_API_KEY` via **either** `.streamlit/secrets.toml` (copy
+   [.streamlit/secrets.toml.example](.streamlit/secrets.toml.example)) **or** a `.env` file
+   (copy [.env.example](.env.example)) **or** a real environment variable. Optionally set
+   `GEMINI_MODEL` (default `gemini-2.5-flash`).
+3. On Streamlit Community Cloud, paste the key into the app's **Secrets** box.
+
+**Security:** the key is read only from secrets/env — never hard-coded, printed, or committed.
+`.env` and `.streamlit/secrets.toml` are git-ignored. **Cost:** Gemini is called only on explicit
+user actions (ask / generate report / compare / analyse shortlist), results are cached per session,
+and only the relevant player(s) or filtered candidates are sent — never the whole dataset. **Fallback:**
+if the key is missing or a call fails, the app shows a notice and everything else keeps working.
 
 ## Installation
 
@@ -152,11 +214,16 @@ jupyter nbconvert --to notebook --execute football_ml.ipynb --inplace
 ```
 Performance ML/
 ├── app.py                     # Streamlit dashboard (loads models/, never retrains)
+├── scouting.py                # scouting functions over the saved data (UI + AI tools)
+├── search_index.py            # Trie (prefix-tree) + hash-map player search index
+├── ai_scout.py                # optional Gemini layer (interpretation only)
 ├── football_ml.ipynb          # full analysis: clean -> features -> models -> save
 ├── requirements.txt           # pinned runtime deps (app + Streamlit Cloud)
 ├── requirements-dev.txt       # + jupyter/nbconvert/pyreadr for the notebook & rebuild
+├── .env.example               # template for GEMINI_API_KEY (copy to .env, git-ignored)
 ├── .streamlit/
-│   └── config.toml            # forces the light theme + primary colour
+│   ├── config.toml            # forces the light theme + primary colour
+│   └── secrets.toml.example   # template for the key (copy to secrets.toml, git-ignored)
 ├── data/
 │   └── players.csv            # merged FBref dataset (one row per player-season)
 ├── models/
@@ -177,7 +244,10 @@ football_ml.ipynb  --(train)-->  models/artifacts.joblib + models/players_scored
                                                |
                                         (load, no retrain)
                                                v
-                                            app.py  -->  Streamlit (4 sections)
+                            scouting.py  <-->  app.py  -->  Streamlit (6 sections)
+                                 ^
+                                 | (function calling, optional)
+                             ai_scout.py  -->  Google Gemini
 ```
 
 ## Deployment (Streamlit Community Cloud)
@@ -188,6 +258,7 @@ football_ml.ipynb  --(train)-->  models/artifacts.joblib + models/players_scored
    `app.py` on the default branch.
 3. Streamlit Cloud installs `requirements.txt` (pinned), loads the saved
    artifacts and starts — no training, no backend, no database.
+4. (Optional) to enable AI Scout, paste `GEMINI_API_KEY` into the app's **Secrets** box.
 
 ## Future scope
 
