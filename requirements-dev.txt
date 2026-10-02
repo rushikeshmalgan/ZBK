@@ -1,0 +1,9 @@
+# Extra tools for running the notebook and (optionally) rebuilding the dataset.
+# Not needed to run the Streamlit app. Install with:  pip install -r requirements-dev.txt
+-r requirements.txt
+jupyter==1.1.1
+nbconvert==7.17.1
+ipykernel==7.4.0
+# only needed to regenerate data/players.csv from the raw .rds files (scripts/build_dataset.py);
+# the CSV is already committed, so this is optional.
+pyreadr

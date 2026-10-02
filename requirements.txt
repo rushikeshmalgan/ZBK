@@ -1,0 +1,10 @@
+# Runtime dependencies for the Streamlit app (also used by Streamlit Community Cloud).
+# Pinned to the versions the saved models/artifacts.joblib was trained with, so loading
+# the pickled scikit-learn models never triggers a version-mismatch warning.
+pandas==2.3.3
+numpy==2.2.4
+scikit-learn==1.7.2
+matplotlib==3.10.8
+seaborn==0.13.2
+streamlit==1.48.1
+joblib==1.5.1
