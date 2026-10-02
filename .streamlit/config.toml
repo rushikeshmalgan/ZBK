@@ -1,0 +1,12 @@
+# Forces a light theme regardless of the viewer's system / browser dark-mode setting.
+[theme]
+base = "light"
+primaryColor = "#00A651"
+backgroundColor = "#F6F7F1"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#0F1115"
+font = "sans serif"
+
+[client]
+toolbarMode = "minimal"
+showErrorDetails = true
